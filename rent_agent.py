@@ -17,7 +17,11 @@ client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # ==================== 2. 工具函數：Google Sheet 讀寫 ====================
 def get_sheet():
-    gc = gspread.service_account(filename="credentials.json")
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        gc = gspread.service_account_from_dict(json.loads(creds_json))
+    else:
+        gc = gspread.service_account(filename="credentials.json")
     sh = gc.open("SE13_Rent_Tracker")
     return sh.sheet1
 

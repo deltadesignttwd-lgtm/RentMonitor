@@ -1,9 +1,15 @@
+import os
+import json
 import gspread
 
 def test_google_sheet_connection():
     try:
         # 1. 載入憑證檔並建立連線
-        gc = gspread.service_account(filename="credentials.json")
+        creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+        if creds_json:
+            gc = gspread.service_account_from_dict(json.loads(creds_json))
+        else:
+            gc = gspread.service_account(filename="credentials.json")
 
         # 2. 打開你的 Google Sheet
         sheet_name = "SE13_Rent_Tracker"
