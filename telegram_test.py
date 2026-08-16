@@ -1,9 +1,11 @@
 import os
 import requests
+from dotenv import load_dotenv
 
-# Set these as environment variables before running, e.g.:
-#   export TG_BOT_TOKEN="your-bot-token"
-#   export TG_CHAT_ID="your-chat-id"
+# Loads variables from a local .env file (gitignored, never committed).
+# See .env.example for the expected keys.
+load_dotenv()
+
 TG_BOT_TOKEN = os.environ["TG_BOT_TOKEN"]
 TG_CHAT_ID = os.environ["TG_CHAT_ID"]
 
