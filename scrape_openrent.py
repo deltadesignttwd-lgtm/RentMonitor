@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from dotenv import load_dotenv
+from urllib.parse import urlencode
 
 # ==================== 1. 設定與環境變數 ====================
 load_dotenv()
@@ -11,11 +12,17 @@ TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")
 
 # OpenRent SE13 5HU (Lewisham) 搜尋結果頁面，1 房、10 分鐘範圍
-SEARCH_URL = (
-    "https://www.openrent.co.uk/properties-to-rent/se13-5hu-lewisham-greater-london"
-    "?term=SE13%205HU%20Lewisham,%20Greater%20London&searchType=minutes&area=10"
-    "&bedrooms_min=1&bedrooms_max=1"
-)
+# 用 urlencode 產生查詢字串，確保跟 OpenRent 自己產生的連結编码方式一致
+# (空白用 +、逗號用 %2C)，手動拼字串曾因編碼不一致被伺服器回 405。
+SEARCH_BASE_URL = "https://www.openrent.co.uk/properties-to-rent/se13-5hu-lewisham-greater-london"
+SEARCH_PARAMS = {
+    "term": "SE13 5HU Lewisham, Greater London",
+    "searchType": "minutes",
+    "area": "10",
+    "bedrooms_min": "1",
+    "bedrooms_max": "1",
+}
+SEARCH_URL = f"{SEARCH_BASE_URL}?{urlencode(SEARCH_PARAMS)}"
 
 HEADERS = {
     "User-Agent": (
