@@ -1,0 +1,52 @@
+SE13 5HU OpenRent Scraper - Windows Task Scheduler Setup
+==========================================================
+
+1. Install Python (if not already installed)
+   - https://www.python.org/downloads/
+   - During install, check "Add python.exe to PATH".
+
+2. Get the project files
+   - Put scrape_openrent.py, requirements.txt, run_scraper.bat, and
+     .env.example all in the same folder, e.g. C:\RentMonitor\
+
+3. Install dependencies
+   - Open Command Prompt in that folder and run:
+       pip install -r requirements.txt
+
+4. Create your .env file
+   - Copy .env.example to .env in the same folder
+   - Edit .env and fill in your real values:
+       TG_BOT_TOKEN=your-real-telegram-bot-token
+       TG_CHAT_ID=your-real-telegram-chat-id
+
+5. Test it manually first
+   - Double-click run_scraper.bat, or run it from Command Prompt:
+       run_scraper.bat
+   - Check scrape.log (created in the same folder) for output, and check
+     your Telegram chat for the report message.
+
+6. Set up Windows Task Scheduler
+   - Open "Task Scheduler" (search it in the Start menu)
+   - Click "Create Task..." (not "Create Basic Task", so you get full options)
+   - General tab:
+       - Name: SE13 5HU Rent Scraper
+       - Select "Run whether user is logged on or not" if you want it to
+         run even when you're not signed in
+   - Triggers tab:
+       - Click "New...", set "Weekly", tick Monday, set the time to 11:00 AM
+         (or whatever time you want)
+   - Actions tab:
+       - Click "New...", Action = "Start a program"
+       - Program/script: C:\RentMonitor\run_scraper.bat
+       - Start in (optional): C:\RentMonitor
+   - Click OK, enter your Windows password if prompted
+   - Right-click the new task and choose "Run" to test it fires correctly
+
+Notes
+-----
+- .env is already excluded from git (see .gitignore) - never commit it.
+- scrape.log will accumulate over time; delete it occasionally if it gets
+  large, or edit run_scraper.bat to overwrite instead of append (change
+  ">>" to ">").
+- If Telegram sending fails, double check TG_BOT_TOKEN / TG_CHAT_ID in .env
+  and that you've started a conversation with your bot at least once.
