@@ -1,8 +1,11 @@
-name: Weekly OpenRent SE13 Scrape
+name: Weekly OpenRent SE13 5HU Scrape
 
+# Step 1: every Monday 11:00 UTC, hit the OpenRent SE13 5HU search page
+# (BST is UTC+1, so this is 12:00 UK time during summer / 11:00 during winter).
+# Step 2: extract rent, address, type, furnishing for each listing.
+# Step 3: send the results to Telegram. No Google Sheets involved.
 on:
   schedule:
-    # 每週一 11:00 UTC（英國夏令時間 BST 為 12:00，冬令 GMT 為 11:00）
     - cron: '0 11 * * 1'
   workflow_dispatch: {}
 
@@ -23,5 +26,4 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         run: python scrape_openrent.py
