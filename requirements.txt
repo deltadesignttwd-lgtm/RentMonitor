@@ -2,3 +2,4 @@ requests
 python-dotenv
 gspread
 anthropic
+beautifulsoup4

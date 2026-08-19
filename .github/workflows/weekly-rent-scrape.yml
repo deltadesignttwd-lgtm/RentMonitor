@@ -1,0 +1,27 @@
+name: Weekly OpenRent SE13 Scrape
+
+on:
+  schedule:
+    # 每週一 11:00 UTC（英國夏令時間 BST 為 12:00，冬令 GMT 為 11:00）
+    - cron: '0 11 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run OpenRent scraper
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: python scrape_openrent.py
