@@ -1,12 +1,16 @@
 name: Weekly OpenRent SE13 5HU Scrape
 
-# Step 1: every Monday 11:00 UTC, hit the OpenRent SE13 5HU search page
-# (BST is UTC+1, so this is 12:00 UK time during summer / 11:00 during winter).
+# Step 1: hit the OpenRent SE13 5HU search page.
 # Step 2: extract rent, address, type, furnishing for each listing.
 # Step 3: send the results to Telegram. No Google Sheets involved.
+#
+# NOTE: openrent.co.uk returns 405 to requests from GitHub-hosted runners
+# (their datacenter IP ranges are blocked), confirmed across several runs
+# with correct URL encoding and full browser headers. So there's no
+# `schedule:` trigger here anymore — the actual weekly run happens via cron
+# on a local machine (see README/chat instructions). This workflow is kept
+# as workflow_dispatch only, for manual one-off runs/debugging.
 on:
-  schedule:
-    - cron: '0 11 * * 1'
   workflow_dispatch: {}
 
 jobs:
