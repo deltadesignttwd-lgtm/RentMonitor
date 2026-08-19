@@ -24,16 +24,17 @@ HEADERS = {
     )
 }
 
-# 房源卡片與各欄位的 CSS selector。
-# 這是依 OpenRent 常見頁面結構寫的起始版本；此環境目前仍無法連到
-# openrent.co.uk 做即時驗證，若實跑時抓不到資料或欄位是空的，
-# 請對照當下的網頁原始碼調整這裡（每個欄位可放多個用逗號分隔的候選 selector）。
-LISTING_CARD_SELECTOR = "div.pli"
+# 房源卡片與各欄位的 CSS selector，對照 2026-08 實際頁面原始碼確認過。
+# 每張房源卡片是 <a class="pli search-property-card" ...>，不是 div。
+LISTING_CARD_SELECTOR = "a.pli"
 FIELD_SELECTORS = {
     # 標題格式如「1 Bed Flat, Lee High Road, SE13」，之後會拆成 property_type + address
-    "title": "h2, .pt-title, a.pli-title",
-    "rent_pcm": ".price, .pt-price",
-    "furnished": ".furnished-status, .furnished",
+    "title": ".fs-3",
+    # 「£1,595」+「per month」兩個 span，取整個容器文字；
+    # 已出租 (Let Agreed) 的房源沒有 .pim，退回抓那個狀態文字本身
+    "rent_pcm": ".pim, .fs-4.fw-medium.text-primary",
+    # Furnished 狀態一律是該卡片房源特徵列表的最後一個 <li>
+    "furnished": "ul.inline-list-divide li:last-child",
 }
 
 
@@ -41,7 +42,7 @@ def _first_text(card, selector_str, default=""):
     for sel in [s.strip() for s in selector_str.split(",")]:
         el = card.select_one(sel)
         if el and el.get_text(strip=True):
-            return el.get_text(strip=True)
+            return el.get_text(" ", strip=True)
     return default
 
 
