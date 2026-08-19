@@ -24,11 +24,28 @@ SEARCH_PARAMS = {
 }
 SEARCH_URL = f"{SEARCH_BASE_URL}?{urlencode(SEARCH_PARAMS)}"
 
+# 加上完整瀏覽器會送的 headers（不只 User-Agent）。
+# 405 若是因為 WAF 判斷請求「看起來不像瀏覽器」而擋下，這樣或許能過；
+# 但若 openrent.co.uk 是直接擋 GitHub Actions runner 的雲端/機房 IP 段，
+# 這裡加 headers 也沒用，那就得從別的網路環境（例如自架 runner）跑。
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    )
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-GB,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.openrent.co.uk/",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
 }
 
 # 房源卡片與各欄位的 CSS selector，對照 2026-08 實際頁面原始碼確認過。
