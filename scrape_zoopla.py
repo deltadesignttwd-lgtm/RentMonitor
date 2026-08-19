@@ -18,9 +18,7 @@ SEARCH_URL = (
 )
 
 # 只保留「地址」包含這個字串的房源（不分大小寫）；設成空字串 "" 代表不篩選，全部列出。
-# 目前 Eastdown Park 可能沒有現貨可測試，第一次先設 "" 確認真的有抓到房源，
-# 確認 OK 後再改回 "Eastdown Park" 當正式篩選條件。
-ADDRESS_FILTER = ""
+ADDRESS_FILTER = "Eastdown Park"
 
 # 跟 scrape_openrent.py 用同一組完整瀏覽器 headers。
 HEADERS = {
@@ -43,51 +41,29 @@ HEADERS = {
     "Sec-Fetch-User": "?1",
 }
 
-# ⚠️ 未對照真實頁面原始碼確認過！這個 sandbox 連不到 zoopla.co.uk（跟一開始連不到
-# openrent.co.uk 一樣），所以下面的 selector 是根據 Zoopla 常見的 data-testid 命名
-# 猜的起始版本，每個欄位都放了好幾個候選 selector（用逗號分隔，依序嘗試）。
-# 如果實跑抓到 0 筆，或欄位是空的/錯的：
-#   1. 在瀏覽器打開 SEARCH_URL，右鍵一張房源卡片 -> 檢查(Inspect)
-#   2. 把那張卡片的 HTML 複製貼給我，我會照實際結構修正這裡的 selector
-#      （跟當初修 scrape_openrent.py 的 LISTING_CARD_SELECTOR 一樣的流程）
-LISTING_CARD_SELECTOR = (
-    "[data-testid='search-result'], [data-testid='regular-listing'], "
-    "div[data-testid*='listing'], li[data-testid*='listing']"
-)
+# 房源卡片與各欄位的 CSS selector，對照 2026-08 實際頁面原始碼確認過。
+# 每張房源卡片是 <a data-testid="listing-card-content">，包住價格/坪數/地址/簡介。
+# class 名稱是 CSS Modules 產生的 hash（例如 price_priceText__TArfK），後面那段
+# hash 可能隨改版變動，所以用 [class*='...'] 只比對前面穩定的部分。
+LISTING_CARD_SELECTOR = "a[data-testid='listing-card-content']"
 FIELD_SELECTORS = {
-    "address": "address, [data-testid='listing-title'], h2",
-    "rent_pcm": "[data-testid='listing-price'], p[data-testid*='price']",
-    "property_type": "[data-testid='listing-spec'], p[data-testid*='spec']",
-    # Zoopla 搜尋結果卡片通常不會直接顯示 Furnished/Unfurnished（要進詳情頁才有），
-    # 這裡只是盡量在卡片裡找含 "urnished" 字樣的標籤，抓不到就顯示「未提供」。
-    "furnished": ":-soup-contains('urnished')",
+    "address": "address",
+    "rent_pcm": "[class*='price_priceText']",
+    # Zoopla 卡片沒有獨立的房型欄位，這裡用「1 bed / 1 bath / 1 reception」那行代替。
+    "property_type": "[class*='amenities_amenityListSlim']",
 }
 
-
-def _innermost(elements):
-    """篩掉「包住其他 match」的外層元素，只留下最具體的那個。
-    用來修正 :-soup-contains 之類的 selector：外層容器的文字通常也包含子元素
-    的文字，所以 select() 會連同外層一起抓到，這裡把它濾掉只留最裡層的那個。"""
-    return [
-        el for el in elements
-        if not any(other is not el and other in el.descendants for other in elements)
-    ]
+# Zoopla 搜尋結果頁面（不管是看得到的 HTML 還是內嵌的 JSON 資料）完全沒有
+# Furnished/Unfurnished 欄位——要點進每筆房源的詳情頁才有，這裡固定顯示這段文字，
+# 不用猜測性的 selector 去硬抓（避免誤抓到簡介文字裡剛好出現的 "unfurnished" 字樣）。
+FURNISHED_NOT_AVAILABLE = "未提供 (Zoopla 搜尋結果頁未顯示，需進入房源詳情頁)"
 
 
 def _first_text(card, selector_str, default=""):
-    for sel in [s.strip() for s in selector_str.split(",")]:
-        matches = _innermost(card.select(sel))
-        if matches and matches[0].get_text(strip=True):
-            return matches[0].get_text(" ", strip=True)
+    el = card.select_one(selector_str)
+    if el and el.get_text(strip=True):
+        return el.get_text(" ", strip=True)
     return default
-
-
-def _select_cards(soup, selector_str):
-    for sel in [s.strip() for s in selector_str.split(",")]:
-        cards = soup.select(sel)
-        if cards:
-            return cards
-    return []
 
 
 def fetch_search_page():
@@ -98,12 +74,12 @@ def fetch_search_page():
 
 def parse_listings(html):
     soup = BeautifulSoup(html, "html.parser")
-    cards = _select_cards(soup, LISTING_CARD_SELECTOR)
+    cards = soup.select(LISTING_CARD_SELECTOR)
 
     if not cards:
         print(
             f"⚠️ 找不到任何符合 '{LISTING_CARD_SELECTOR}' 的房源卡片，"
-            f"Zoopla 頁面結構可能跟猜測的不一樣，請檢查並更新 "
+            f"Zoopla 頁面結構可能已變動，請檢查並更新 "
             f"LISTING_CARD_SELECTOR / FIELD_SELECTORS。"
         )
         return []
@@ -114,7 +90,7 @@ def parse_listings(html):
             "rent_pcm": _first_text(card, FIELD_SELECTORS["rent_pcm"], "未提供租金"),
             "address": _first_text(card, FIELD_SELECTORS["address"], "未提供地址"),
             "property_type": _first_text(card, FIELD_SELECTORS["property_type"], "未提供"),
-            "furnished": _first_text(card, FIELD_SELECTORS["furnished"], "未提供"),
+            "furnished": FURNISHED_NOT_AVAILABLE,
         })
 
     return listings
