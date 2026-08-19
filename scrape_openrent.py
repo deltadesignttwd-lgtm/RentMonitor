@@ -24,6 +24,11 @@ SEARCH_PARAMS = {
 }
 SEARCH_URL = f"{SEARCH_BASE_URL}?{urlencode(SEARCH_PARAMS)}"
 
+# 只保留「地址」包含這個字串的房源（不分大小寫）；設成空字串 "" 代表不篩選，全部列出。
+# 目前設成 "Lee High Road" 是測試用（因為現在 Eastdown Park 沒有房源可以驗證有抓到）；
+# 測試 OK 後把它換成 "Eastdown Park" 就是正式篩選條件。
+ADDRESS_FILTER = "Lee High Road"
+
 # 加上完整瀏覽器會送的 headers（不只 User-Agent）。
 # 405 若是因為 WAF 判斷請求「看起來不像瀏覽器」而擋下，這樣或許能過；
 # 但若 openrent.co.uk 是直接擋 GitHub Actions runner 的雲端/機房 IP 段，
@@ -110,6 +115,13 @@ def parse_listings(html):
     return listings
 
 
+def filter_by_address(listings, keyword):
+    if not keyword:
+        return listings
+    keyword_lower = keyword.lower()
+    return [item for item in listings if keyword_lower in item["address"].lower()]
+
+
 # ==================== 2. Telegram 發送 ====================
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
@@ -152,6 +164,18 @@ def main():
 
     if not listings:
         send_telegram("⚠️ SE13 5HU 租屋監控：本次未抓到任何房源，請確認 OpenRent 頁面結構是否變動。")
+        return
+
+    filtered = filter_by_address(listings, ADDRESS_FILTER)
+    if ADDRESS_FILTER:
+        print(f"套用地址篩選 '{ADDRESS_FILTER}' 後剩 {len(filtered)} 筆。")
+    listings = filtered
+
+    if not listings:
+        if ADDRESS_FILTER:
+            send_telegram(f"ℹ️ SE13 5HU 租屋監控：本次沒有地址包含「{ADDRESS_FILTER}」的房源。")
+        else:
+            send_telegram("⚠️ SE13 5HU 租屋監控：本次未抓到任何房源，請確認 OpenRent 頁面結構是否變動。")
         return
 
     report = build_report(listings)
