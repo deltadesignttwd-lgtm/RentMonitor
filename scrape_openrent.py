@@ -1,5 +1,7 @@
 import os
+import json
 import requests
+import gspread
 from bs4 import BeautifulSoup
 from datetime import datetime
 from dotenv import load_dotenv
@@ -8,8 +10,8 @@ from urllib.parse import urlencode
 # ==================== 1. 設定與環境變數 ====================
 load_dotenv()
 
-TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
-TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")
+GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
+SHEET_NAME = "SE13_Rent_Tracker"
 
 # OpenRent SE13 5HU (Lewisham) 搜尋結果頁面，1 房、10 分鐘範圍
 # 用 urlencode 產生查詢字串，確保跟 OpenRent 自己產生的連結编码方式一致
@@ -23,11 +25,6 @@ SEARCH_PARAMS = {
     "bedrooms_max": "1",
 }
 SEARCH_URL = f"{SEARCH_BASE_URL}?{urlencode(SEARCH_PARAMS)}"
-
-# 只保留「地址」包含這個字串的房源（不分大小寫）；設成空字串 "" 代表不篩選，全部列出。
-# 目前設成 "Lee High Road" 是測試用（因為現在 Eastdown Park 沒有房源可以驗證有抓到）；
-# 測試 OK 後把它換成 "Eastdown Park" 就是正式篩選條件。
-ADDRESS_FILTER = "Lee High Road"
 
 # 加上完整瀏覽器會送的 headers（不只 User-Agent）。
 # 405 若是因為 WAF 判斷請求「看起來不像瀏覽器」而擋下，這樣或許能過；
@@ -115,75 +112,93 @@ def parse_listings(html):
     return listings
 
 
-def filter_by_address(listings, keyword):
-    if not keyword:
-        return listings
-    keyword_lower = keyword.lower()
-    return [item for item in listings if keyword_lower in item["address"].lower()]
+# ==================== 2. Google Sheet 讀寫 ====================
+# 欄位順序：Address | Rent PCM | Property Type | Furnished | Status | First Seen | Last Seen
+SHEET_HEADER = [
+    "Address", "Rent PCM", "Property Type", "Furnished",
+    "Status", "First Seen", "Last Seen",
+]
+COL_RENT = 2
+COL_STATUS = 5
+COL_LAST_SEEN = 7
 
 
-# ==================== 2. Telegram 發送 ====================
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TG_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown",
-    }
-    res = requests.post(url, json=payload)
-    return res.status_code == 200
+def get_sheet():
+    if GOOGLE_CREDENTIALS_JSON:
+        gc = gspread.service_account_from_dict(json.loads(GOOGLE_CREDENTIALS_JSON))
+    else:
+        gc = gspread.service_account(filename="credentials.json")
+    sh = gc.open(SHEET_NAME)
+    worksheet = sh.sheet1
+    if not worksheet.get_all_values():
+        worksheet.append_row(SHEET_HEADER)
+    return worksheet
 
 
-# ==================== 3. 組合報告 ====================
-def build_report(listings):
-    lines = [
-        "🏠 *SE13 5HU 租屋監控*",
-        f"本次共掃描到 {len(listings)} 筆房源。",
-        "",
-    ]
+def load_existing_listings(worksheet):
+    records = worksheet.get_all_records()
+    existing = {}
+    for idx, row in enumerate(records, start=2):  # 第 1 列是標題，資料從第 2 列開始
+        address = str(row.get("Address", "")).strip().lower()
+        if address:
+            existing[address] = {
+                "row_num": idx,
+                "rent": str(row.get("Rent PCM", "")),
+            }
+    return existing
+
+
+def process_listings(listings):
+    worksheet = get_sheet()
+    existing_listings = load_existing_listings(worksheet)
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    new_items = []
+    dropped_items = []
 
     for item in listings:
-        lines.append(
-            f"📍 *地址*: {item['address']}\n"
-            f"💰 *租金*: {item['rent_pcm']}\n"
-            f"🛏️ *房型*: {item['property_type']}\n"
-            f"🛋️ *傢俱*: {item['furnished']}"
-        )
-        lines.append("")
+        address_key = item["address"].strip().lower()
+        if not address_key:
+            continue
 
-    lines.append(f"📅 更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    return "\n".join(lines)
+        if address_key not in existing_listings:
+            worksheet.append_row([
+                item["address"],
+                item["rent_pcm"],
+                item["property_type"],
+                item["furnished"],
+                "NEW",
+                today_str,
+                today_str,
+            ])
+            new_items.append(item)
+        else:
+            old_info = existing_listings[address_key]
+            if old_info["rent"] != item["rent_pcm"]:
+                status_tag = f"PRICE DROP (was {old_info['rent']})"
+                worksheet.update_cell(old_info["row_num"], COL_RENT, item["rent_pcm"])
+                worksheet.update_cell(old_info["row_num"], COL_STATUS, status_tag)
+                worksheet.update_cell(old_info["row_num"], COL_LAST_SEEN, today_str)
+                dropped_items.append((item, old_info["rent"]))
+            else:
+                worksheet.update_cell(old_info["row_num"], COL_LAST_SEEN, today_str)
+
+    return new_items, dropped_items
 
 
-# ==================== 4. 主程式 ====================
+# ==================== 3. 主程式 ====================
 def main():
-    print("🤖 開始抓取 OpenRent SE13 5HU 房源...")
+    print("開始抓取 OpenRent SE13 5HU 房源...")
     html = fetch_search_page()
     listings = parse_listings(html)
     print(f"共抓到 {len(listings)} 筆房源。")
 
     if not listings:
-        send_telegram("⚠️ SE13 5HU 租屋監控：本次未抓到任何房源，請確認 OpenRent 頁面結構是否變動。")
+        print("未抓到任何房源，請確認 OpenRent 頁面結構是否變動。")
         return
 
-    filtered = filter_by_address(listings, ADDRESS_FILTER)
-    if ADDRESS_FILTER:
-        print(f"套用地址篩選 '{ADDRESS_FILTER}' 後剩 {len(filtered)} 筆。")
-    listings = filtered
-
-    if not listings:
-        if ADDRESS_FILTER:
-            send_telegram(f"ℹ️ SE13 5HU 租屋監控：本次沒有地址包含「{ADDRESS_FILTER}」的房源。")
-        else:
-            send_telegram("⚠️ SE13 5HU 租屋監控：本次未抓到任何房源，請確認 OpenRent 頁面結構是否變動。")
-        return
-
-    report = build_report(listings)
-
-    if send_telegram(report):
-        print("🎉 Telegram 通報發送成功！")
-    else:
-        print("❌ Telegram 發送失敗。")
+    new_items, dropped_items = process_listings(listings)
+    print(f"已寫入 Google Sheet：新增 {len(new_items)} 筆，降價 {len(dropped_items)} 筆。")
 
 
 if __name__ == "__main__":
