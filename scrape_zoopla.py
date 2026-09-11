@@ -1,11 +1,10 @@
 import os
+import re
 import json
 import requests
 import gspread
-from bs4 import BeautifulSoup
 from datetime import datetime
 from dotenv import load_dotenv
-from urllib.parse import urljoin
 
 # ==================== 1. 設定與環境變數 ====================
 load_dotenv()
@@ -13,16 +12,16 @@ load_dotenv()
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
 SHEET_NAME = "Rent Monitor"
 
-# 只寫入「地址」符合 ADDRESS_FILTERS 其中一個關鍵字的房源。
-# Zoopla 卡片沒有獨立的房型欄位（見下方 FIELD_SELECTORS 註解），所以這裡
-# 不像 scrape_openrent.py 一樣加房型篩選，只篩地址。
+# 只寫入「地址」符合 ADDRESS_FILTERS 其中一個關鍵字、且「房型描述」包含
+# PROPERTY_TYPE_FILTER 的房源。留空則該項不過濾。
 ADDRESS_FILTERS = ["Eastdown Park", "Dermody Road", "Wisteria Road", "Gilmore Road", "Lee High Road"]
+PROPERTY_TYPE_FILTER = "1 bed flat"
 
-# Zoopla SE13 5HU (Eastdown Park) 搜尋結果頁面
+# Zoopla SE13 5HU (Eastdown Park) 搜尋結果頁面，已在 Zoopla 網站上套用 1 房篩選
 SEARCH_URL = (
-    "https://www.zoopla.co.uk/to-rent/property/london/eastdown-park/se13-5hu/"
-    "?is_retirement_home=false&is_shared_accommodation=false"
-    "&is_student_accommodation=false&q=se13+5hu&search_source=home&recent_search=true"
+    "https://www.zoopla.co.uk/to-rent/property/1-bedroom/london/eastdown-park/se13-5hu/"
+    "?include_rented=true&is_retirement_home=false&is_shared_accommodation=false"
+    "&is_student_accommodation=false&q=se13%205hu&search_source=to-rent"
 )
 
 # 跟 scrape_openrent.py 用同一組完整瀏覽器 headers。
@@ -49,24 +48,14 @@ HEADERS = {
     "Sec-Fetch-User": "?1",
 }
 
-# 房源卡片與各欄位的 CSS selector，對照先前實際頁面原始碼確認過。
-# 每張房源卡片是 <a data-testid="listing-card-content">，包住價格/坪數/地址/簡介。
-# class 名稱是 CSS Modules 產生的 hash（例如 price_priceText__TArfK），後面那段
-# hash 可能隨改版變動，所以用 [class*='...'] 只比對前面穩定的部分。
-# 注意：這個 URL 換過（拿掉了路徑裡的 "1-bedroom"），Zoopla 頁面結構也可能已經
-# 改變，如果抓不到卡片，把實際頁面原始碼貼給我，我再更新這裡的 selector。
-LISTING_CARD_SELECTOR = "a[data-testid='listing-card-content']"
-FIELD_SELECTORS = {
-    "address": "address",
-    "rent_pcm": "[class*='price_priceText']",
-}
-
-
-def _first_text(card, selector_str, default=""):
-    el = card.select_one(selector_str)
-    if el and el.get_text(strip=True):
-        return el.get_text(" ", strip=True)
-    return default
+# Zoopla 卡片可見的 HTML 沒有獨立的「房型」欄位（只有 bed/bath/reception 數量），
+# 但頁面另外內嵌了一段 schema.org 結構化資料 <script id="lsrp-schema"
+# type="application/ld+json">，裡面每筆房源的 "name" 欄位是完整描述，例如
+# 「1 bed flat to rent near Eastdown Park, London SE13」，可以直接拿來篩選房型，
+# 也比對照 CSS class 穩定（不會因為改版換掉 class hash 而失效）。
+LSRP_SCHEMA_PATTERN = re.compile(
+    r'<script id="lsrp-schema"[^>]*>(.*?)</script>', re.DOTALL
+)
 
 
 def fetch_search_page():
@@ -76,36 +65,53 @@ def fetch_search_page():
 
 
 def parse_listings(html):
-    soup = BeautifulSoup(html, "html.parser")
-    cards = soup.select(LISTING_CARD_SELECTOR)
-
-    if not cards:
+    match = LSRP_SCHEMA_PATTERN.search(html)
+    if not match:
         print(
-            f"⚠️ 找不到任何符合 '{LISTING_CARD_SELECTOR}' 的房源卡片，"
-            f"Zoopla 頁面結構可能已變動，請檢查並更新 "
-            f"LISTING_CARD_SELECTOR / FIELD_SELECTORS。"
+            "⚠️ 找不到 lsrp-schema 結構化資料，"
+            "Zoopla 頁面結構可能已變動，請把實際頁面原始碼貼給我更新解析邏輯。"
         )
         return []
 
+    try:
+        data = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        print("⚠️ lsrp-schema 結構化資料解析失敗，Zoopla 頁面結構可能已變動。")
+        return []
+
     listings = []
-    for card in cards:
-        href = card.get("href", "")
-        listings.append({
-            "rent_pcm": _first_text(card, FIELD_SELECTORS["rent_pcm"], "未提供租金"),
-            "address": _first_text(card, FIELD_SELECTORS["address"], "未提供地址"),
-            "url": urljoin(SEARCH_URL, href) if href else "",
-        })
+    for graph_item in data.get("@graph", []):
+        if graph_item.get("@type") != "SearchResultsPage":
+            continue
+        item_list = graph_item.get("mainEntity", {}).get("itemListElement", [])
+        for entry in item_list:
+            item = entry.get("item", {})
+            offers = item.get("offers", {})
+            related = item.get("isRelatedTo", {})
+            price = offers.get("price", "")
+            listings.append({
+                "rent_pcm": f"£{price} pcm" if price else "未提供租金",
+                "address": related.get("address", "未提供地址"),
+                "property_type": item.get("name", ""),
+                "url": item.get("url", ""),
+            })
+
+    if not listings:
+        print(
+            "⚠️ lsrp-schema 裡沒有找到任何房源項目，"
+            "Zoopla 頁面結構可能已變動，請把實際頁面原始碼貼給我更新解析邏輯。"
+        )
 
     return listings
 
 
-def filter_by_address(listings, keywords):
-    keywords_lower = [kw.lower() for kw in keywords if kw]
-    if not keywords_lower:
-        return listings
+def filter_listings(listings, address_keywords, property_type_keyword):
+    address_kws = [kw.lower() for kw in address_keywords if kw]
+    type_kw = property_type_keyword.lower()
     return [
         item for item in listings
-        if any(kw in item["address"].lower() for kw in keywords_lower)
+        if (not address_kws or any(kw in item["address"].lower() for kw in address_kws))
+        and (not type_kw or type_kw in item["property_type"].lower())
     ]
 
 
@@ -194,8 +200,11 @@ def main():
         )
         return
 
-    listings = filter_by_address(listings, ADDRESS_FILTERS)
-    print(f"符合地址關鍵字 {ADDRESS_FILTERS} 其中之一的房源共 {len(listings)} 筆。")
+    listings = filter_listings(listings, ADDRESS_FILTERS, PROPERTY_TYPE_FILTER)
+    print(
+        f"符合地址關鍵字 {ADDRESS_FILTERS} 其中之一，且房型包含 "
+        f"'{PROPERTY_TYPE_FILTER}' 的房源共 {len(listings)} 筆。"
+    )
 
     if not listings:
         print("沒有符合條件的房源，不寫入 Google Sheet。")
