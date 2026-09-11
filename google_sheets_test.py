@@ -12,7 +12,7 @@ def test_google_sheet_connection():
             gc = gspread.service_account(filename="credentials.json")
 
         # 2. 打開你的 Google Sheet
-        sheet_name = "SE13_Rent_Tracker"
+        sheet_name = "Rent Monitor"
         sh = gc.open(sheet_name)
         worksheet = sh.sheet1  # 選擇第一個工作表
 
@@ -20,14 +20,11 @@ def test_google_sheet_connection():
 
         # 3. 測試寫入一筆測試資料
         test_row = [
-            "test_link_001",
+            "2026-08-16",
             "Lee High Road, SE13",
             "£1,595",
-            "1 Bed Flat",
-            "Unfurnished",
-            "NEW",
-            "2026-08-16",
-            "2026-08-16"
+            "TEST",
+            "https://www.openrent.co.uk/property-to-rent/london/1-bed-flat-lee-high-road-se13/2885752"
         ]
 
         worksheet.append_row(test_row)
