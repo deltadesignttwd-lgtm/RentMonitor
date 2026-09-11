@@ -5,24 +5,25 @@ import gspread
 from bs4 import BeautifulSoup
 from datetime import datetime
 from dotenv import load_dotenv
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
 # ==================== 1. 設定與環境變數 ====================
 load_dotenv()
 
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
-SHEET_NAME = "SE13_Rent_Tracker"
+SHEET_NAME = "Rent Monitor"
 
-# OpenRent SE13 5HU (Lewisham) 搜尋結果頁面，1 房、10 分鐘範圍
+# OpenRent SE13 5HU (Lewisham) 搜尋結果頁面，1 房、5 分鐘範圍、限已裝潢 (furnishedType=2)
 # 用 urlencode 產生查詢字串，確保跟 OpenRent 自己產生的連結编码方式一致
 # (空白用 +、逗號用 %2C)，手動拼字串曾因編碼不一致被伺服器回 405。
 SEARCH_BASE_URL = "https://www.openrent.co.uk/properties-to-rent/se13-5hu-lewisham-greater-london"
 SEARCH_PARAMS = {
     "term": "SE13 5HU Lewisham, Greater London",
     "searchType": "minutes",
-    "area": "10",
+    "area": "5",
     "bedrooms_min": "1",
     "bedrooms_max": "1",
+    "furnishedType": "2",
 }
 SEARCH_URL = f"{SEARCH_BASE_URL}?{urlencode(SEARCH_PARAMS)}"
 
@@ -102,25 +103,24 @@ def parse_listings(html):
     for card in cards:
         title = _first_text(card, FIELD_SELECTORS["title"], "")
         property_type, address = _split_title(title)
+        href = card.get("href", "")
         listings.append({
             "rent_pcm": _first_text(card, FIELD_SELECTORS["rent_pcm"], "未提供租金"),
             "address": address or "未提供地址",
             "property_type": property_type or "未提供",
             "furnished": _first_text(card, FIELD_SELECTORS["furnished"], "未提供"),
+            "url": urljoin(SEARCH_URL, href) if href else "",
         })
 
     return listings
 
 
 # ==================== 2. Google Sheet 讀寫 ====================
-# 欄位順序：Address | Rent PCM | Property Type | Furnished | Status | First Seen | Last Seen
-SHEET_HEADER = [
-    "Address", "Rent PCM", "Property Type", "Furnished",
-    "Status", "First Seen", "Last Seen",
-]
-COL_RENT = 2
-COL_STATUS = 5
-COL_LAST_SEEN = 7
+# 欄位順序：Date | Address | Listed rent | Remark | URL
+SHEET_HEADER = ["Date", "Address", "Listed rent", "Remark", "URL"]
+COL_DATE = 1
+COL_RENT = 3
+COL_REMARK = 4
 
 
 def get_sheet():
@@ -139,11 +139,11 @@ def load_existing_listings(worksheet):
     records = worksheet.get_all_records()
     existing = {}
     for idx, row in enumerate(records, start=2):  # 第 1 列是標題，資料從第 2 列開始
-        address = str(row.get("Address", "")).strip().lower()
-        if address:
-            existing[address] = {
+        url = str(row.get("URL", "")).strip()
+        if url:
+            existing[url] = {
                 "row_num": idx,
-                "rent": str(row.get("Rent PCM", "")),
+                "rent": str(row.get("Listed rent", "")),
             }
     return existing
 
@@ -157,31 +157,27 @@ def process_listings(listings):
     dropped_items = []
 
     for item in listings:
-        address_key = item["address"].strip().lower()
-        if not address_key:
+        url_key = item["url"].strip()
+        if not url_key:
             continue
 
-        if address_key not in existing_listings:
+        if url_key not in existing_listings:
             worksheet.append_row([
+                today_str,
                 item["address"],
                 item["rent_pcm"],
-                item["property_type"],
-                item["furnished"],
                 "NEW",
-                today_str,
-                today_str,
+                item["url"],
             ])
             new_items.append(item)
         else:
-            old_info = existing_listings[address_key]
+            old_info = existing_listings[url_key]
             if old_info["rent"] != item["rent_pcm"]:
-                status_tag = f"PRICE DROP (was {old_info['rent']})"
+                remark = f"PRICE DROP (was {old_info['rent']})"
+                worksheet.update_cell(old_info["row_num"], COL_DATE, today_str)
                 worksheet.update_cell(old_info["row_num"], COL_RENT, item["rent_pcm"])
-                worksheet.update_cell(old_info["row_num"], COL_STATUS, status_tag)
-                worksheet.update_cell(old_info["row_num"], COL_LAST_SEEN, today_str)
+                worksheet.update_cell(old_info["row_num"], COL_REMARK, remark)
                 dropped_items.append((item, old_info["rent"]))
-            else:
-                worksheet.update_cell(old_info["row_num"], COL_LAST_SEEN, today_str)
 
     return new_items, dropped_items
 
