@@ -13,9 +13,10 @@ load_dotenv()
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
 SHEET_NAME = "Rent Monitor"
 
-# 只寫入「地址」包含 ADDRESS_FILTER 且「房型」包含 PROPERTY_TYPE_FILTER 的房源，
-# 留空字串則該項不過濾。
-ADDRESS_FILTER = "Eastdown Park"
+# 只寫入「地址」符合 ADDRESS_FILTERS 其中一個關鍵字、且「房型」包含
+# PROPERTY_TYPE_FILTER 的房源。ADDRESS_FILTERS 留空 list 則不過濾地址；
+# PROPERTY_TYPE_FILTER 留空字串則不過濾房型。
+ADDRESS_FILTERS = ["Eastdown Park", "Dermody Road", "Wisteria Road", "Gilmore Road"]
 PROPERTY_TYPE_FILTER = "1 Bed Flat"
 
 # OpenRent SE13 5HU (Lewisham) 搜尋結果頁面，1 房、5 分鐘範圍、限已裝潢 (furnishedType=2)
@@ -120,12 +121,12 @@ def parse_listings(html):
     return listings
 
 
-def filter_listings(listings, address_keyword, property_type_keyword):
-    address_kw = address_keyword.lower()
+def filter_listings(listings, address_keywords, property_type_keyword):
+    address_kws = [kw.lower() for kw in address_keywords if kw]
     type_kw = property_type_keyword.lower()
     return [
         item for item in listings
-        if (not address_kw or address_kw in item["address"].lower())
+        if (not address_kws or any(kw in item["address"].lower() for kw in address_kws))
         and (not type_kw or type_kw in item["property_type"].lower())
     ]
 
@@ -208,10 +209,10 @@ def main():
         print("未抓到任何房源，請確認 OpenRent 頁面結構是否變動。")
         return
 
-    listings = filter_listings(listings, ADDRESS_FILTER, PROPERTY_TYPE_FILTER)
+    listings = filter_listings(listings, ADDRESS_FILTERS, PROPERTY_TYPE_FILTER)
     print(
-        f"符合地址關鍵字 '{ADDRESS_FILTER}' 且房型包含 '{PROPERTY_TYPE_FILTER}' "
-        f"的房源共 {len(listings)} 筆。"
+        f"符合地址關鍵字 {ADDRESS_FILTERS} 其中之一，且房型包含 "
+        f"'{PROPERTY_TYPE_FILTER}' 的房源共 {len(listings)} 筆。"
     )
 
     if not listings:
