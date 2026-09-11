@@ -16,17 +16,17 @@ SHEET_NAME = "Rent Monitor"
 # 只寫入「地址」符合 ADDRESS_FILTERS 其中一個關鍵字、且「房型」包含
 # PROPERTY_TYPE_FILTER 的房源。ADDRESS_FILTERS 留空 list 則不過濾地址；
 # PROPERTY_TYPE_FILTER 留空字串則不過濾房型。
-ADDRESS_FILTERS = ["Eastdown Park", "Dermody Road", "Wisteria Road", "Gilmore Road"]
+ADDRESS_FILTERS = ["Eastdown Park", "Dermody Road", "Wisteria Road", "Gilmore Road", "Lee High Road"]
 PROPERTY_TYPE_FILTER = "1 Bed Flat"
 
-# OpenRent SE13 5HU (Lewisham) 搜尋結果頁面，1 房、5 分鐘範圍、限已裝潢 (furnishedType=2)
+# OpenRent SE13 5HU (Lewisham) 搜尋結果頁面，1 房、10 分鐘範圍、限已裝潢 (furnishedType=2)
 # 用 urlencode 產生查詢字串，確保跟 OpenRent 自己產生的連結编码方式一致
 # (空白用 +、逗號用 %2C)，手動拼字串曾因編碼不一致被伺服器回 405。
 SEARCH_BASE_URL = "https://www.openrent.co.uk/properties-to-rent/se13-5hu-lewisham-greater-london"
 SEARCH_PARAMS = {
     "term": "SE13 5HU Lewisham, Greater London",
     "searchType": "minutes",
-    "area": "5",
+    "area": "10",
     "bedrooms_min": "1",
     "bedrooms_max": "1",
     "furnishedType": "2",
