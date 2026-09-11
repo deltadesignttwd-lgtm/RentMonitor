@@ -15,26 +15,29 @@ SE13 5HU OpenRent Scraper - Windows Task Scheduler Setup
 
 4. Create your .env file
    - Copy .env.example to .env in the same folder
-   - Edit .env and fill in your real values:
-       TG_BOT_TOKEN=your-real-telegram-bot-token
-       TG_CHAT_ID=your-real-telegram-chat-id
+   - Edit .env and fill in your real value:
+       GOOGLE_CREDENTIALS_JSON={...your full service account JSON key, one line...}
 
 5. Test it manually first
-   - Double-click run_scraper.bat, or run it from Command Prompt:
+   - Double-click google_sheets_test.py's companion check: open Command
+     Prompt in the folder and run:
+       python google_sheets_test.py
+     This should print a success message and add a test row to your
+     "Rent Monitor" Google Sheet (delete that test row afterward).
+   - Then double-click run_scraper.bat, or run it from Command Prompt:
        run_scraper.bat
    - Check scrape.log (created in the same folder) for output, and check
-     your Telegram chat for the report message.
+     your "Rent Monitor" Google Sheet for new rows.
 
 6. Set up Windows Task Scheduler
    - Open "Task Scheduler" (search it in the Start menu)
    - Click "Create Task..." (not "Create Basic Task", so you get full options)
    - General tab:
-       - Name: SE13 5HU Rent Scraper
+       - Name: Rent Monitor Scraper
        - Select "Run whether user is logged on or not" if you want it to
          run even when you're not signed in
    - Triggers tab:
-       - Click "New...", set "Weekly", tick Monday, set the time to 11:00 AM
-         (or whatever time you want)
+       - Click "New...", set "Daily", set the time to 7:00 AM
    - Actions tab:
        - Click "New...", Action = "Start a program"
        - Program/script: C:\RentMonitor\run_scraper.bat
@@ -48,5 +51,7 @@ Notes
 - scrape.log will accumulate over time; delete it occasionally if it gets
   large, or edit run_scraper.bat to overwrite instead of append (change
   ">>" to ">").
-- If Telegram sending fails, double check TG_BOT_TOKEN / TG_CHAT_ID in .env
-  and that you've started a conversation with your bot at least once.
+- If the sheet connection fails, double check GOOGLE_CREDENTIALS_JSON in
+  .env and that the "Rent Monitor" sheet is shared with the service
+  account's email (Editor access) - see the client_email field in your
+  downloaded JSON key.
