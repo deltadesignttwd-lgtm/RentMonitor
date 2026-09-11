@@ -26,6 +26,9 @@ SEARCH_URL = (
 )
 
 # 跟 scrape_openrent.py 用同一組完整瀏覽器 headers。
+# 注意：Accept-Encoding 不能列 "br" -- requests 沒裝 brotli 套件的話沒辦法
+# 自動解壓縮 Brotli 壓縮的內容，Zoopla 的伺服器會用 br 回應，導致 resp.text
+# 變成一堆亂碼、完全比對不到任何 selector（OpenRent 剛好沒用 br 才沒事）。
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -36,7 +39,7 @@ HEADERS = {
         "image/avif,image/webp,image/apng,*/*;q=0.8"
     ),
     "Accept-Language": "en-GB,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Encoding": "gzip, deflate",
     "Referer": "https://www.zoopla.co.uk/",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
