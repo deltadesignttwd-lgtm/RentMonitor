@@ -181,7 +181,14 @@ def main():
     print(f"共抓到 {len(listings)} 筆房源。")
 
     if not listings:
-        print("未抓到任何房源，請確認 Zoopla 頁面結構是否變動。")
+        debug_file = "zoopla_debug.html"
+        with open(debug_file, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(
+            f"未抓到任何房源。已將程式實際收到的網頁內容存成 {debug_file}，"
+            f"請用瀏覽器或記事本打開它，確認裡面是不是正常的 Zoopla 房源列表頁"
+            f"（還是被導向了驗證頁/空白頁/不同內容），並回報結果。"
+        )
         return
 
     listings = filter_by_address(listings, ADDRESS_FILTERS)
