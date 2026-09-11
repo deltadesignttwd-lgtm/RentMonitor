@@ -1,6 +1,9 @@
 import os
 import json
 import gspread
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def test_google_sheet_connection():
     try:
