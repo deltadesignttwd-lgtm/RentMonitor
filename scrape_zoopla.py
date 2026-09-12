@@ -12,10 +12,19 @@ load_dotenv()
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
 SHEET_NAME = "Rent Monitor"
 
-# 只寫入「地址」符合 ADDRESS_FILTERS 其中一個關鍵字、且「房型描述」包含
-# PROPERTY_TYPE_FILTER 的房源。留空則該項不過濾。
+# 只寫入「地址」符合 ADDRESS_FILTERS 其中一個關鍵字、且房間數等於 BEDROOMS_FILTER、
+# 且類別等於 PROPERTY_CATEGORY_FILTER 的房源。BEDROOMS_FILTER 設 None 或
+# PROPERTY_CATEGORY_FILTER 設空字串則該項不過濾。
+#
+# 注意：一開始用 item["name"]（例如「1 bed flat to rent near ...」）文字比對來篩選
+# 房型，結果發現在套用「1-bedroom」搜尋篩選後，Zoopla 的「附近相似房源」結果會用
+# 搜尋條件本身組出 name 文字，跟房源實際規格對不上（studio、3 bed 都可能被標成
+# 「1 bed flat」），造成篩選失效。改用結構化資料裡的 numberOfBedrooms（房間數，
+# studio 是 0）和 @type（Zoopla 用 "Apartment" 代表公寓/Flat，"House" 代表獨立屋）
+# 這兩個真正的規格欄位來篩選，不受 name 文字誤導。
 ADDRESS_FILTERS = ["Eastdown Park", "Dermody Road", "Wisteria Road", "Gilmore Road", "Lee High Road"]
-PROPERTY_TYPE_FILTER = "1 bed flat"
+BEDROOMS_FILTER = 1
+PROPERTY_CATEGORY_FILTER = "Apartment"
 
 # Zoopla SE13 5HU (Eastdown Park) 搜尋結果頁面，已在 Zoopla 網站上套用 1 房篩選
 SEARCH_URL = (
@@ -92,6 +101,8 @@ def parse_listings(html):
             listings.append({
                 "rent_pcm": f"£{price} pcm" if price else "未提供租金",
                 "address": related.get("address", "未提供地址"),
+                "bedrooms": related.get("numberOfBedrooms"),
+                "category": related.get("@type", ""),
                 "property_type": item.get("name", ""),
                 "url": item.get("url", ""),
             })
@@ -105,14 +116,20 @@ def parse_listings(html):
     return listings
 
 
-def filter_listings(listings, address_keywords, property_type_keyword):
+def filter_listings(listings, address_keywords, bedrooms_filter, category_filter):
     address_kws = [kw.lower() for kw in address_keywords if kw]
-    type_kw = property_type_keyword.lower()
-    return [
-        item for item in listings
-        if (not address_kws or any(kw in item["address"].lower() for kw in address_kws))
-        and (not type_kw or type_kw in item["property_type"].lower())
-    ]
+    category_kw = category_filter.lower()
+
+    result = []
+    for item in listings:
+        if address_kws and not any(kw in item["address"].lower() for kw in address_kws):
+            continue
+        if bedrooms_filter is not None and item["bedrooms"] != bedrooms_filter:
+            continue
+        if category_kw and item["category"].lower() != category_kw:
+            continue
+        result.append(item)
+    return result
 
 
 # ==================== 2. Google Sheet 讀寫 ====================
@@ -200,10 +217,10 @@ def main():
         )
         return
 
-    listings = filter_listings(listings, ADDRESS_FILTERS, PROPERTY_TYPE_FILTER)
+    listings = filter_listings(listings, ADDRESS_FILTERS, BEDROOMS_FILTER, PROPERTY_CATEGORY_FILTER)
     print(
-        f"符合地址關鍵字 {ADDRESS_FILTERS} 其中之一，且房型包含 "
-        f"'{PROPERTY_TYPE_FILTER}' 的房源共 {len(listings)} 筆。"
+        f"符合地址關鍵字 {ADDRESS_FILTERS} 其中之一、房間數為 {BEDROOMS_FILTER}、"
+        f"類別為 '{PROPERTY_CATEGORY_FILTER}' 的房源共 {len(listings)} 筆。"
     )
 
     if not listings:
